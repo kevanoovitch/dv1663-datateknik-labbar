@@ -24,7 +24,7 @@ digits:
 .byte 0b00111001 // C
 .byte 0b01011110 // d
 .byte 0b01111001 // E
-.byte 0b01110011 // F
+.byte 0b01110001 // F
 
 .text
 .global _start
@@ -57,37 +57,40 @@ wait_char:
 
 handle_input: 
 
+    PUSH {lr}
     // if r0 == 'w'
     CMP r0, #'w'
-    BEQ increase_index
+    BLEQ increase_index
     // if r0 == 's'
     CMP r0, #'s'
-    BEQ decrease_index
-    
+    BLEQ decrease_index
+    POP {pc}
    
 
 increase_index: 
  //btn 'w'
+ PUSH {r10, lr}    
  ADD r3, r3, #1
  CMP r3, #16
  MOVEQ r3, #0              // wrap around if r3 == 16
- bx lr
+ POP {r10, pc}   
  
 decrease_index: 
  // btn 's'
+ PUSH {r10, lr}    
  SUBS r3, r3, #1
  CMP r3, #-1
  MOVEQ r3, #15             // wrap around if r3 < 0
- bx lr
+ POP {r10, pc}    
 
 
 display_digit: 
     // multi-branch nytta sp 
 
-    PUSH {lr} //Spara return till main_loop
+    PUSH {r10, lr}    
     BL read_arr
     STR r0, [r1]                // Send to display 
-    POP {pc}
+    POP {r10, pc}     
     
 
 

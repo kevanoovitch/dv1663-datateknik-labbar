@@ -37,7 +37,7 @@ digits:
 .byte 0b00111001 // C
 .byte 0b01011110 // d
 .byte 0b01111001 // E
-.byte 0b01110011 // F
+.byte 0b01110001 // F
 
 .text
 
@@ -54,9 +54,9 @@ digits:
 
 .global _start
 _start:
-    LDR r1, =DISPLAYS_BASE    // Base address for display 0-3
-    LDR r2, =digits    // r1 points to start of array
-    MOV r3, #0     // r3 = index = 0 
+    LDR r8, =DISPLAYS_BASE    // Base address for display 0-3
+    LDR r9, =digits    // r1 points to start of array
+    MOV r10, #0     // r10 = index = 0 
     
 
     // Initieringar för att kunna nyttja interrupts
@@ -70,13 +70,13 @@ _start:
 
 
     // config av GIC
-    MOV R0, #80  // UART Interrupt ID = 80
+    MOV R0, #73  // UART Interrupt ID = 73 for buttons
     BL CONFIG_GIC // configure the ARM GIC
 
 
-    LDR R0, =UART_CONTROL_REGISTER
-    MOV R1, #0x1 // enable REceive interrupts
-    STR R1, [R0]
+    //LDR R0, =UART_CONTROL_REGISTER
+    //MOV R1, #0x1 // enable REceive interrupts
+    //STR R1, [R0]
 
     // tillåt avbrott
     MSR CPSR_c, #0b01010011  // IRQ unmasked, MODE = SVC
@@ -86,6 +86,8 @@ _start:
     LDR R0, =0xFF200058       // Interruptmask register
     MOV R1, #0xF              // Aktivera interrupt för alla 4 knappar (bit 0–3) 
     STR R1, [R0]
+
+    //
 
 B main_loop
 
@@ -102,37 +104,7 @@ SERVICE_IRQ:
     // Kolla om det är BTN (ID 73)
     CMP R5, #73
     BEQ BTN_INTERRUPT_HANDLER
-
-
-    CHECK_UART_INTERRUPT:
-    CMP R5, #80  // UART Interrupt ID
-    BLEQ UART_INTERRUPT_HANDLER
-
-    B SERVICE_IRQ_DONE // if not recognized, some error handling or just return from interrupt
-
-
-   UART_INTERRUPT_HANDLER:
-    PUSH {LR}
-    BL handle_uart_data
-    POP {PC}
-
-   handle_uart_data:
-    LDR R0, =UART_DATA_REGISTER
-    LDR R1, [R0]
-    AND R1, R1, #0xFF
-    
-    //anpassa för föregående handle_input logik
-    MOV R0, R1
-    BL handle_input
   
-handle_input:
-    
-    CMP R0, #'w'
-    BLEQ increase_index
-    CMP R0, #'s'
-    BLEQ decrease_index
-    
-
 
 
 BTN_INTERRUPT_HANDLER:
@@ -179,22 +151,20 @@ count_loop:
     POP {R0-R7, LR}
     SUBS PC, LR, #4
 
-
-    BL UART_INTERRUPT_HANDLER
-
     B SERVICE_IRQ_DONE // inget vi hanterar? bara returnera
 
     
 
+
 main_loop:
-    //BL read_uart           // blocks until a character is received
-    //BL handle_input   
-    //BL display_digit 
+    BL read_uart           // blocks until a character is received
+    BL handle_input   
+    BL display_digit 
     B main_loop            // if not w or s, just loop again
 
 read_arr:
     
-    LDRB r0, [r3, r2]  // r0 = digits[r3]
+    LDRB r0, [r10, r9]  // r0 = digits[r10]
     BX lr
     
 read_uart:
@@ -207,28 +177,44 @@ wait_char:
     BX lr                     // return to main_loop
 
 
+handle_input: 
+
+    PUSH {lr}
+   
+    // if r0 == 'w'
+    CMP r0, #'w'
+    BLEQ increase_index
+    // if r0 == 's'
+    CMP r0, #'s'
+    BLEQ decrease_index
+    POP {pc} 
+  
+
 increase_index: 
  //btn 'w'
- ADD r3, r3, #1
- CMP r3, #16
- MOVEQ r3, #0              // wrap around if r3 == 16
- bx lr
+ PUSH {lr}    
+ ADD r10, r10, #1
+ CMP r10, #16
+ MOVEQ r10, #0              // wrap around if r3 == 16
+ POP {pc}   
  
 decrease_index: 
  // btn 's'
- SUBS r3, r3, #1
- CMP r3, #-1
- MOVEQ r3, #15             // wrap around if r3 < 0
- bx lr
+ PUSH {lr}    
+ SUBS r10, r10, #1
+ CMP r10, #-1
+ MOVEQ r10, #15             // wrap around if r3 < 0
+ POP {pc}    
 
 
 display_digit: 
     // multi-branch nytta sp 
 
-    PUSH {lr} //Spara return till main_loop
+    PUSH {lr}    
     BL read_arr
-    STR r0, [r1]                // Send to display 
-    POP {pc}
+    STRB r0, [r8]                // Send to display 
+    POP {pc}     
+    
 
 
        /* Undefined instructions */
