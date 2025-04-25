@@ -39,6 +39,8 @@ digits:
 .byte 0b01111001 // E
 .byte 0b01110001 // F
 
+index: .word 0 // index for array
+
 .text
 
 .org 0x00  // Address of interrupt vector
@@ -56,7 +58,8 @@ digits:
 _start:
     LDR r8, =DISPLAYS_BASE    // Base address for display 0-3
     LDR r9, =digits    // r1 points to start of array
-    MOV r10, #0     // r10 = index = 0 
+    LDR r10, =index   // r10 = pekare till indexvariabeln
+
     
 
     // Initieringar för att kunna nyttja interrupts
@@ -84,10 +87,9 @@ _start:
     // tillåt avbrott baserat på push-btns
 
     LDR R0, =0xFF200058       // Interruptmask register
-    MOV R1, #0xF              // Aktivera interrupt för alla 4 knappar (bit 0–3) 
+    MOV R1, #0x3             // Aktivera interrupt för 2 knappar (bit 0–1) 
     STR R1, [R0]
 
-    //
 
 B main_loop
 
@@ -103,8 +105,15 @@ SERVICE_IRQ:
     CHECK_BTN_INTERRUPT:
     // Kolla om det är BTN (ID 73)
     CMP R5, #73
-    BEQ BTN_INTERRUPT_HANDLER
+    BLEQ BTN_INTERRUPT_HANDLER
   
+     SERVICE_IRQ_DONE: 
+    //allt är hanterat, returnera detta till GIC:en
+    STR R5, [R4, #0x10]   // ICCEOIR ← skriv tillbaka interrupt ID
+    
+    /* 6. Return from interrupt */
+    POP {R0-R7, LR}
+    SUBS PC, LR, #4
 
 
 BTN_INTERRUPT_HANDLER:
@@ -115,43 +124,47 @@ BTN_INTERRUPT_HANDLER:
 
 
 handle_btn_logic:
+
+      PUSH {R4, LR}
+
     // Läs Edgecapture och spara original
     LDR R0, =0xFF20005C
     LDR R1, [R0]         
     MOV R4, R1            // spara originalvärde
 
-    MOV R2, #0            // counter = 0
-    MOV R3, #4            // antal knappar
+    
+    
 
-count_loop:
-    TST R1, #1
-    ADDNE R2, R2, #1
-    LSR R1, R1, #1
-    SUBS R3, R3, #1
-    BNE count_loop
+    // Kolla om BTN1 (bit 1) är satt → increase
+    TST R1, #0x2
+    BNE call_increase
 
-    CMP R2, #2
-    BLEQ increase_index
+    // Kolla om BTN0 (bit 0) är satt → decrease
+    TST R1, #0x1
+    BNE call_decrease
 
-    CMP R2, #1
-    BLEQ decrease_index
+    // annars gör inget
+    B done_buttons
+    call_increase:
+    //PUSH {lr}
+    BL increase_index
+    B done_buttons
+
+    call_decrease:
+    //PUSH {lr}
+    BL decrease_index
+    B done_buttons
+
+    done_buttons:
+    // index är ändrat så uppdatera display
+    BL display_digit
 
     // Nollställ Edgecapture
     LDR R0, =0xFF20005C
     STR R4, [R0]
 
-    BX LR
+    POP {r4, PC}
 
-
-    SERVICE_IRQ_DONE: 
-    //allt är hanterat, returnera detta till GIC:en
-    STR R5, [R4, #0x10]   // ICCEOIR ← skriv tillbaka interrupt ID
-    
-    /* 6. Return from interrupt */
-    POP {R0-R7, LR}
-    SUBS PC, LR, #4
-
-    B SERVICE_IRQ_DONE // inget vi hanterar? bara returnera
 
     
 
@@ -164,17 +177,23 @@ main_loop:
 
 read_arr:
     
-    LDRB r0, [r10, r9]  // r0 = digits[r10]
+    LDR r3, [r10]      // r3 = [r10] = indexvärdet
+    LDRB r0, [r9, r3]  // r0 = digits[index]
     BX lr
+
     
 read_uart:
-    LDR r4, =0xff201000       // UART_DATA address
+    PUSH {r3, r5, lr}          
+
+    LDR r3, =0xff201000         // UART_DATA address
 wait_char:
-    LDR r5, [r4]
-    TST r5, #0x8000           // is bit 15 set? (RVALID)
-    BEQ wait_char             // no? loop until a char is received
-    AND r0, r5, #0x00FF       // keep only the character byte
-    BX lr                     // return to main_loop
+    LDR r5, [r3]
+    TST r5, #0x8000             // is bit 15 set? (RVALID)
+    BEQ wait_char               // no? loop until a char is received
+    AND r0, r5, #0x00FF         // keep only the character byte
+
+    POP {r3, r5, pc}            // <--- och ändra denna rad (returnera via POP)
+            // return to main_loop
 
 
 handle_input: 
@@ -193,17 +212,21 @@ handle_input:
 increase_index: 
  //btn 'w'
  PUSH {lr}    
- ADD r10, r10, #1
- CMP r10, #16
- MOVEQ r10, #0              // wrap around if r3 == 16
+ LDR r0, [r10] 
+ ADD r0, r0, #1
+ CMP r0, #16
+ MOVEQ r0, #0              // wrap around if r3 == 16
+ STR r0, [r10]
  POP {pc}   
  
 decrease_index: 
  // btn 's'
  PUSH {lr}    
- SUBS r10, r10, #1
- CMP r10, #-1
- MOVEQ r10, #15             // wrap around if r3 < 0
+ LDR r0, [r10] 
+ SUBS r0, r0, #1
+ CMP r0, #-1
+ MOVEQ r0, #15             // wrap around if r3 < 0
+ STR r0, [r10]
  POP {pc}    
 
 
@@ -212,7 +235,7 @@ display_digit:
 
     PUSH {lr}    
     BL read_arr
-    STRB r0, [r8]                // Send to display 
+    STR r0, [r8]                // Send to display 
     POP {pc}     
     
 
