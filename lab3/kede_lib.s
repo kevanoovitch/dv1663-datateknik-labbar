@@ -95,13 +95,36 @@ outImage:
 
     ret 
 
-
-
-
-
 putInt:
-// TODO inplementera mer än return void
-    ret 
+    # Hämta talet (n) från %rdi
+    movq %rdi, %r8 # (arg) rdi = rdx
+    
+    # Kolla om talet är 0
+    #    - Om ja: skriv tecknet '0' med putChar och hoppa till slut
+
+    cmpq $0, %r8 
+    jne buildDigits
+
+    buildDigits:
+    loop: 
+        moq %r8, %rax 
+        xorq %rdx, %rdx 
+        movq $10, %r9 
+        divq %r9 # rax = kvoten, rdx = rest, r9 = nämnare
+        addq $'0', %dl 
+        pushq %rdx 
+        movq %rax,%r8 
+        cmpq $0, %r8 
+        jne loop 
+    
+    printLoop
+        popq %rdi # arg för putChar
+        call putChar 
+        cmpq %rsp, %rbp 
+        jne printLoop
+
+    ret
+
 
 putText:
 // TODO inplementera mer än return void
