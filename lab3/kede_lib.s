@@ -180,7 +180,7 @@ getText:
 
 
 copyLoop:
-    # 3. Läs tecken från (%r9)
+    # 3. Läs tecken från (%r11)
     #    - Om nullbyte → gå till finish
     #    - Om %rdx == %rsi → gå till finish (max n tecken kopierade)
     movzbq (%r10,%r8,1), %r11
@@ -315,8 +315,32 @@ putInt:
 
 
 putText:
-// TODO inplementera mer än return void
-    ret
+    # 1. %rdi = pekare till sträng (buf)
+
+    # leaq %r10, 
+    # movzbq (%r10,%r8,1), %r11 
+    
+    # 2. Starta loop:
+putTextLoop:
+        # a) Läs ett tecken från (%rdi)
+        # b) Om tecknet är null (0) → klar
+        # c) Annars:
+            # - Flytta tecknet till %dil
+            # - Anropa putChar
+            # - Öka %rdi
+            # - Gå tillbaks till loopen
+        movzbq (%rdi), %rax 
+        cmpb $0, %al 
+        je donePutText
+        movb %al, %dil
+        call putChar 
+        incq %rdi 
+        jmp putTextLoop
+
+donePutText:
+    # 3. ret
+    ret 
+
 
 putChar:
 # 1. Läs aktuell position från outPos
