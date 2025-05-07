@@ -40,29 +40,187 @@ replaceNewline:
     incq %rcx
     cmpq $128, %rcx 
     jl replaceNewline
-    jmp done
+    jmp inImageDone
 
 setNull:
     movb $0x00, (%rsi,%rcx,1)
 
-done: 
+inImageDone: 
     movq $0, inPos(%rip)
 
     ret 
 
 getInt:
-// TODO inplementera mer än ret 0
-    movq $0, %rax
-    ret
+    # 1. Kontrollera om inPos är utanför bufferten (eller bufferten är tom)
+    #    - Om ja: kalla inImage för att fylla inBuffer och nollställ inPos
+    call getInPos 
+    movq %rax, %r8# r8 = getInPos()
+
+    # kontroll 
+    leaq inBuffer(%rip), %rsi 
+    movzbq (%rsi,%r8,1), %r9 # r9 = inBuffer[inPos] 
+    cmpq $0, %r9 
+    je callInImage 
+
+    callInImage:
+        call inImage
+        movq $0, %r8                # nollställ inPos efter inImage
+        leaq inBuffer(%rip), %rsi  # sätt rsi till start av buffer igen
+
+
+    # 2. Läs inPos och peka %rsi på inBuffer + inPos
+    leaq inBuffer(%rip,%r8,1), %rsi 
+
+    # 3. Hoppa över inledande mellanslag (loopa över ' ' och '\t')
+    getIntSkipWhiteSpace: 
+        movzbq (%rsi), %rax 
+        cmpb $' ', %al 
+        je skipChar 
+        cmpb $'\t', %al 
+        je skipChar
+        jmp checkSign
+
+    skipChar:
+        incq %rsi 
+        incq %r8 
+        jmp getIntSkipWhiteSpace 
+
+
+    # 4. Kolla om tecknet är '+' eller '-' 
+    #    - Spara tecken för eventuell negation
+
+    xorq %rbx, %rbx # rbx = 0 standard (+)
+
+    checkSign: 
+        movzbq (%rsi), %rax 
+        cmpb $'+', %al 
+        je skipSign 
+
+        cmpb $'-', %al 
+        je setNegate
+
+        jmp parseDigits 
+
+    setNegate: 
+        movq $1, %rbx # tecken är (-)
+        incq %rsi 
+        incq %r8 
+        jmp parseDigits
+
+    skipSign:
+        incq %rsi 
+        incq %r8 
+        jmp parseDigits 
+
+    # 5. Initiera ett register (t.ex. %rax) till 0 för att bygga upp talet
+
+    parseDigits:
+        movq $0, %rax
+    # 6. Läs ett tecken i taget så länge det är en siffra ('0'–'9'):
+    #    - Omvandla ASCII → siffervärde (subtrahera '0')
+    #    - Multiplicera ackumulerat tal med 10
+    #    - Lägg till nya siffran
+    digitLoop:
+        movzbq (%rsi), %rdx # rdx = inBuffer[inPos] 
+        cmpb $'0', %dl 
+        jb doneDigits # < 0 -> inte en siffra
+        cmpb $'9', %dl 
+        ja doneDigits # > 9 inte en siffra
+
+        subb $'0', %dl 
+        imulq $10, %rax, %rax 
+        addq %rdx, %rax # lägg ihop siffrorna till ett tal
+
+        incq %rsi 
+        incq %r8 
+        jmp digitLoop
+
+    doneDigits:  
+    # 7. När icke-siffra hittas:
+    #    - Spara nuvarande inPos (pekar på första icke-siffra)
+    movq %r8, inPos(%rip)
+    # 8. Om talet skulle vara negativt: gör negation
+    cmpq $0, %rbx 
+    je returnValue
+    negq %rax 
+
+    returnValue:
+        # 9. Returnera värdet i %rax
+        ret
+
 
 getText:
-// TODO inplementera mer än ret 0
-    movq $0, %rax
-    ret
+    # Parameter 1: %rdi = buf (destination)
+    # Parameter 2: %rsi = n (max antal tecken att läsa)
+
+    push %rdi        # spara buf
+    push %rsi        # spara n
+
+    # 1. Kontrollera om inBuffer[inPos] == 0
+    #    - Om ja: anropa inImage
+    #    - Ladda om inPos och inBuffer-pekare
+    call getInPos 
+    movq %rax, %r8# r8 = getInPos()
+    leaq inBuffer(%rip), %r10 # r10 = &inBuffer 
+    movzbq (%r10,%r8,1), %r9 # r9 = inBuffer[inPos] 
+
+    cmpb $0, %r9b
+    jne copyLoop
+
+
+    call inImage
+    movq $0, %r8                # nollställ inPos efter inImage
+    leaq inBuffer(%rip), %r10  # sätt rsi till start av buffer igen
+
+    # 2. Initiera:
+    #    - %rdx = antal kopierade tecken (räknare)
+    #    - %r8 = inPos
+    #    - %r9 = pekare till inBuffer + inPos
+    movq $0, %rdx 
+
+
+copyLoop:
+    # 3. Läs tecken från (%r9)
+    #    - Om nullbyte → gå till finish
+    #    - Om %rdx == %rsi → gå till finish (max n tecken kopierade)
+    movzbq (%r10,%r8,1), %r11
+    cmpb $0, %r11b
+    je finish
+    cmpq %rdx, %rsi 
+    je finish
+
+    # 4. Kopiera tecknet till (%rdi)
+    movzbq (%r10,%r8,1), %r11 
+    movb %r11b, (%rdi)
+
+    # 5. Öka pekare och räknare:
+    #    - %rdi++
+    #    - %rdx++
+    #    - %r8++
+    incq %rdi
+    incq %rdx 
+    incq %r8
+
+    # 6. Repetera
+    jmp copyLoop
+
+finish:
+    # 7. Sätt nullbyte på slutet av buf
+    # 8. Spara uppdaterad inPos från %r8
+    # 9. Returnera antal kopierade tecken i %rax
+    movb $0, (%rdi)
+    movq %r8, %rdi 
+    call setInPos
+    movq %rdx, %rax 
+    ret 
+
 
 getInPos:
-// TODO inplementera mer än ret 0
-    movq $0, %rax
+    # 1. Ladda värdet i inPos (som är en variabel i .bss) till ett register
+    #    - inPos innehåller indexet i inBuffer (typ som ett int*)
+    movq inPos(%rip), %rax
+
+    # 2. Returnera värdet i %rax (standard enligt calling convention)
     ret
 
 setInPos:
@@ -82,7 +240,7 @@ outImage:
     je writeOut
 
     # inte null -> continue
-    incq $rcx 
+    incq %rcx 
     cmpq $128, %rcx  
     jl loopNull 
 
@@ -123,8 +281,8 @@ putInt:
     #    - Dela talet med 10 (divq)
     movq %r8, %rax 
     xorq %rdx, %rdx
-    movq $10, r9
-    divq r9 
+    movq $10, %r9
+    divq %r9 
     movq %rax, %r8 # uppdatera r8
     #    - Resten (rdx) + '0' → ASCII-tecken
     addb $'0', %dl  
@@ -133,23 +291,24 @@ putInt:
     #    - Öka %rcx
     incq %rcx
     #    - Fortsätt tills talet är 0
-    cmpq $0,r8
+    cmpq $0, %r8
     jne putIntLoop 
 
     # 5. Skriv ut siffrorna i omvänd ordning:
     #    - Minska %rcx tills 0
     #    - Läs intBuffer[rcx - 1]
     #    - Lägg i %dil och anropa putChar
+    printLoop:
     cmpq $0, %rcx
     je putIntDone
     
     decq %rcx 
     movb (%rsi,%rcx,1), %dil 
     call putChar
-    jmp putIntLoop
+    jmp printLoop
     
     # 6. ret
-    putIntdone:
+    putIntDone:
         ret
 
 
@@ -177,25 +336,45 @@ movq %rax, outPos(%rip) # outPos = rax;
 
 # 5. Om positionen är större än eller lika med 127, anropa outImage
 cmpq $127, %rax 
-jl done # hoppa om rax !=> 127
+jl putCharDone # hoppa om rax !=> 127
 call outImage 
 
 # 6. Efter outImage, nollställ outPos
 movq $0, outPos(%rip)
 
 # 7. Avsluta funktionen
-jmp done
+jmp putCharDone
 
-done: 
+putCharDone: 
     ret 
 
 getOutPos:
-// TODO inplementera mer än ret 0
-    movq $0, %rax
-    ret
+    movq outPos(%rip), %rax
+    ret 
 
 setOutPos:
-// TODO inplementera mer än return void
-    ret
+    # 1. Jämför om n < 0
+    cmpq $0, %rdi 
+    
+    jl setZero
+    cmpq $127, %rdi 
+    ja greaterThanMax
+    # 2. Jämför om n > 127
+    
+
+    setZero: 
+    #    - Om ja: sätt rdi = 0
+        movq $0, %rdi 
+        jmp store
+
+    greaterThanMax:
+    #    - Om ja: sätt rdi = 127
+        movq $127, %rdi 
+
+    store:
+    # 3. Spara rdi i outPos
+    movq %rdi, outPos(%rip)
+    # 4. ret
+    ret 
 
 
