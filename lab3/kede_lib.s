@@ -8,6 +8,8 @@ inPos:
     .quad 0 
 outPos: 
     .quad 0    
+intBuffer:
+    .space 20 # helper buffer for putInt
 
 
 .data
@@ -96,34 +98,61 @@ outImage:
     ret 
 
 putInt:
-    # Hämta talet (n) från %rdi
-    movq %rdi, %r8 # (arg) rdi = rdx
+    # 1. Spara n (från %rdi) i t.ex. %rax eller %r8
+
+    movq %rdi, %r8
+
+    # 2. Kolla om talet är 0
+    #    - Om ja: skriv tecknet '0' via putChar
+    #    - Hoppa till slut
+
+    cmpq $0, %r8
+    jne putIntLoop
     
-    # Kolla om talet är 0
-    #    - Om ja: skriv tecknet '0' med putChar och hoppa till slut
+    movb $'0', %dil
+    call putChar
 
-    cmpq $0, %r8 
-    jne buildDigits
+    # 3. Initiera:
+    #    - %rsi = pekare till intBuffer
+    #    - %rcx = räknare (antal siffror)
+    leaq intBuffer(%rip), %rsi
+    movq $0, %rcx 
 
-    buildDigits:
-    loop: 
-        moq %r8, %rax 
-        xorq %rdx, %rdx 
-        movq $10, %r9 
-        divq %r9 # rax = kvoten, rdx = rest, r9 = nämnare
-        addq $'0', %dl 
-        pushq %rdx 
-        movq %rax,%r8 
-        cmpq $0, %r8 
-        jne loop 
+    putIntLoop:  
+    # 4. Starta loop:
+    #    - Dela talet med 10 (divq)
+    movq %r8, %rax 
+    xorq %rdx, %rdx
+    movq $10, r9
+    divq r9 
+    movq %rax, %r8 # uppdatera r8
+    #    - Resten (rdx) + '0' → ASCII-tecken
+    addb $'0', %dl  
+    #    - Spara i intBuffer[rcx]
+    movb %dl, (%rsi,%rcx,1)
+    #    - Öka %rcx
+    incq %rcx
+    #    - Fortsätt tills talet är 0
+    cmpq $0,r8
+    jne putIntLoop 
+
+    # 5. Skriv ut siffrorna i omvänd ordning:
+    #    - Minska %rcx tills 0
+    #    - Läs intBuffer[rcx - 1]
+    #    - Lägg i %dil och anropa putChar
+    cmpq $0, %rcx
+    je putIntDone
     
-    printLoop
-        popq %rdi # arg för putChar
-        call putChar 
-        cmpq %rsp, %rbp 
-        jne printLoop
+    decq %rcx 
+    movb (%rsi,%rcx,1), %dil 
+    call putChar
+    jmp putIntLoop
+    
+    # 6. ret
+    putIntdone:
+        ret
 
-    ret
+
 
 
 putText:
