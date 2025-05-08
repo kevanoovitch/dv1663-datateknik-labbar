@@ -19,7 +19,7 @@ intBuffer:
 //    .space 128 //Ger mig 128 bytes eller 127 tecken.
 
 .text 
-.global inImage, getInt, getText, getInPos, setInPos, outImage, putInt, putText, putChar, getOutPos, setOutPos
+.global inImage, getInt, getText, getInPos, setInPos, outImage, putInt, putText, putChar, getOutPos, setOutPos, getChar
 
 inImage:
 
@@ -224,8 +224,33 @@ getInPos:
     ret
 
 setInPos:
-// TODO inplementera mer än return void
-    ret
+    # 1. Jämför om n < 0  (n ligger i %rdi)
+    #    - Om ja: sätt %rdi = 0
+    cmpq $0, %rdi 
+    jl setToZero
+    
+     # 2. Jämför om n > MAXPOS (t.ex. 127)
+    cmpq $127, %rdi 
+    ja setToMax
+
+    jmp setInPosFinish
+
+    setToZero: 
+    movq $0, %rdi 
+    jmp setInPosFinish
+
+    setToMax:   
+    #    - Om ja: sätt %rdi = 127
+    movq $127, %rdi 
+    jmp setInPosFinish
+
+
+    
+    setInPosFinish:
+    # 3. Spara %rdi i inPos (%rdi är det validerade indexet)
+    movq %rdi, inPos(%rip)
+    ret 
+
 
 outImage:
     # 1. Get pointer to outBuffer
@@ -317,8 +342,6 @@ putInt:
 putText:
     # 1. %rdi = pekare till sträng (buf)
 
-    # leaq %r10, 
-    # movzbq (%r10,%r8,1), %r11 
     
     # 2. Starta loop:
 putTextLoop:
@@ -401,4 +424,38 @@ setOutPos:
     # 4. ret
     ret 
 
+getChar:
+    # 1. Hämta aktuell position från inPos
+    call getInPos 
+    movq %rax, %r8# r8 = getInPos()
+
+    # 2. Ladda basadressen till inBuffer
+    leaq inBuffer(%rip), %r9 
+
+    # 3. Läs tecknet vid inBuffer[inPos]
+    #    - Om tecknet är null (0): anropa inImage och nollställ inPos
+
+    movzbq (%r9,%r8,1), %r10 # r10 = inBuffer[inPos]
+    cmpb $0, %r10b              
+    jne readChar 
+
+    # callInImage:
+    call inImage
+    movq $0, %r8                # nollställ inPos efter inImage
+    leaq inBuffer(%rip), %r9  # sätt rsi till start av buffer igen
+
+
+    readChar:
+    # 4. Läs tecknet vid inBuffer[inPos] igen (efter eventuell refill)
+        movzbq (%r9,%r8,1), %rax  # r10 = inBuffer[inPos]
+
+  
+
+    # 5. Öka inPos med 1 och uppdatera via setInPos
+        incq %r8
+        movq %r8, %rdi 
+        call setInPos
+
+    # 7. ret
+        ret 
 
