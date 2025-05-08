@@ -3,6 +3,7 @@
  *************************************************************/
 
 #include "kede_iolib.h"
+#include <stdio.h>
 
 int main() {
   char headMsg[] = "Start av testprogram. Skriv in 5 tal!";
@@ -25,14 +26,15 @@ int main() {
   for (count = 5; count > 0; count--) {
     temp = getInt();
     if (temp < 0) {
-      pos = getOutPos();
+      pos = getOutPos(); // TODO Fix this memember
       pos--;
-      setOutPos(pos);
+      setOutPos(pos); // TOOD Fix this member
     }
     sum += temp;
-    putInt(temp);
-    putChar('+');
+    putInt(temp); // TOOD Fix this member
+    putChar('+'); // TOOD Fix this member
   }
+  printf("Do we even get to this point?\n");
   pos = getOutPos();
   pos--;
   setOutPos(pos);
