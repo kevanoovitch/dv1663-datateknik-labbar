@@ -1,5 +1,6 @@
 
-.bss 
+
+.data
 inBuffer:
     .space 128
 outBuffer:
@@ -12,7 +13,6 @@ intBuffer:
     .space 20 # helper buffer for putInt
 
 
-.data
 //inBuffer:
 //    .space 128
 //outBuffer:
@@ -23,12 +23,15 @@ intBuffer:
 
 inImage:
 
-    //Läs up till 128 bytes mha syscall:et 'read'
-    movq $0, %rax 
-    movq $0, %rdi 
-    leaq inBuffer(%rip), %rsi # rsi ptr till inBuffer
-    movq $128, %rdx
-    syscall 
+    # TODO Använd fgets istället för vad de här är
+    # fputs(stdin,buffer,lenght)
+
+    leaq inBuffer(%rip), %rdi # rdi ptr till inBuffer
+    movq $128, %rsi # lenght
+    movq stdin, %rdx #"file = instream"
+    call fgets
+
+    
 
     //Överskriver '\n' med 0 som nullterminator
     leaq inBuffer(%rip), %rsi 
@@ -37,10 +40,12 @@ inImage:
 replaceNewline:
     cmpb $0x0A, (%rsi,%rcx,1) # CMP \n inBuffer[rcx]
     je setNull
+    
+    cmpb $0x00, (%rsi,%rcx,1)  # om slutet 
+    je inImageDone
     incq %rcx
-    cmpq $128, %rcx 
-    jl replaceNewline
-    jmp inImageDone
+    jmp replaceNewline
+
 
 setNull:
     movb $0x00, (%rsi,%rcx,1)
@@ -69,7 +74,9 @@ getInt:
 
 
     # 2. Läs inPos och peka %rsi på inBuffer + inPos
-    leaq inBuffer(%rip,%r8,1), %rsi 
+    leaq inBuffer(%rip), %rsi 
+    addq %r8, %rsi 
+ 
 
     # 3. Hoppa över inledande mellanslag (loopa över ' ' och '\t')
     getIntSkipWhiteSpace: 
@@ -270,13 +277,9 @@ outImage:
     jl loopNull 
 
     writeOut:
-    # 3. Skriv mha syscall write(stdout, buffern, lenght)
-    # Dessa 4 operationer blir som intieringen och argumenten till write
-    movq $1, %rax # syscall:write (initiering)
-    movq $1, %rdi # stdout
-    leaq outBuffer(%rip), %rsi # buffern
-    movq %rcx, %rdx  # lenght (bytes)
-    syscall # 'anropet'
+    # fputs metoden
+    leaq outBuffer(%rip), %rdi    # 1:a argumentet: buffert
+    call puts
 
     ret 
 
@@ -341,7 +344,6 @@ putInt:
 
 putText:
     # 1. %rdi = pekare till sträng (buf)
-
     
     # 2. Starta loop:
 putTextLoop:
@@ -352,17 +354,24 @@ putTextLoop:
             # - Anropa putChar
             # - Öka %rdi
             # - Gå tillbaks till loopen
+        
         movzbq (%rdi), %rax 
         cmpb $0, %al 
         je donePutText
+
         movb %al, %dil
         call putChar 
+
+
         incq %rdi 
         jmp putTextLoop
 
 donePutText:
     # 3. ret
-    ret 
+    movb $0, %dil     # sätt null som tecken
+    call putChar      # skriv null till outBuffer
+    ret
+
 
 
 putChar:
@@ -375,15 +384,17 @@ movq outPos(%rip), %rax
 leaq outBuffer(%rip), %rsi # Etablerar en outBufferPtr  
 movb %dil, (%rsi,%rax,1) 
 
+
 # 3. Öka positionen med 1
 incq %rax 
+
 
 # 4. Uppdatera outPos med den nya positionen
 movq %rax, outPos(%rip) # outPos = rax;
 
 # 5. Om positionen är större än eller lika med 127, anropa outImage
 cmpq $127, %rax 
-jl putCharDone # hoppa om rax !=> 127
+jl putCharDone # hoppa om rax < 127
 call outImage 
 
 # 6. Efter outImage, nollställ outPos
